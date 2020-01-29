@@ -1,0 +1,19 @@
+@import './base.scss';
+.dialog-layout-main {
+    padding: 60px 10px 0 10px;
+    .header {
+        height: 60px;
+    }
+}
+.fake {
+    visibility: hidden;
+    padding-bottom: $fixed-wrapper-padding;
+}
+.fake-top {
+    @extend .fake;
+    padding-top: $fixed-wrapper-padding;
+}
+.fake-bottom {
+    @extend .fake;
+    padding-bottom: $fixed-wrapper-padding;
+}

@@ -1,0 +1,15 @@
+@import './base.scss';
+$border: 5px solid lightgray;
+.area {
+    @include crossBrowser(user-select, none);
+    padding: 5px;
+    line-height: 100%;
+}
+.normal {
+    @extend .area;
+    border: $border;
+}
+.dragging {
+    @extend .normal;
+    border-style: dashed;
+}

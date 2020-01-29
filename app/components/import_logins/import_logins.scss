@@ -1,0 +1,33 @@
+.item {
+    display: flex;
+
+    .icon {
+        font-size: xx-large;
+    }
+
+    .divider {
+        height: 100%;
+    }
+
+    .file-size {
+        opacity: 0.5;
+        font-size: 11px;
+    }
+}
+
+.controls {
+    display: flex;
+    clear: both;
+
+    > * {
+        margin: 5px;
+    }
+
+    > div:last-child {
+        flex-grow: 1;
+        height: 70px;
+    }
+}
+.importLoginsLabel {
+    margin: 0px 0px 12px 5px;
+}

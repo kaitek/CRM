@@ -1,0 +1,13 @@
+@import '../common/base.scss';
+.order-row > td {
+    padding-top: 4px !important;
+    padding-bottom: 4px !important;
+}
+.item-table th {
+    @extend .lm-background;
+    color: white !important;
+}
+.item-row > td {
+    padding-top: 4px !important;
+    padding-bottom: 4px !important;
+}

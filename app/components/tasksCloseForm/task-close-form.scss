@@ -1,0 +1,28 @@
+﻿#complete-task-btn {
+    margin: 0 5px;
+}
+
+.ant-table-placeholder {
+    display: none;
+}
+
+.solution-form {
+    display: flex;
+
+    > .left-solution-form-item {
+        flex-grow: 1;
+        margin: 0;
+
+        > .ant-form-item-control-wrapper {
+            width: 100%;
+
+            > .ant-form-item-control {
+                width: 100%;
+            }
+        }
+    }
+
+    > .right-solution-form-item {
+        margin: 0;
+    }
+}

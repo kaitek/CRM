@@ -1,0 +1,32 @@
+$lm-color: #4ba842;
+.lm-color {
+    color: $lm-color !important
+}
+.lm-background {
+    background-color: $lm-color !important
+}
+$fixed-wrapper-padding: 10px;
+.fixed-wrapper {
+    position: fixed;
+    left: 0;
+    right: 0;
+    padding: $fixed-wrapper-padding;
+    background-color: white;
+    z-index: 1;
+}
+.fixed-wrapper-top {
+    padding-top: $fixed-wrapper-padding;
+    @extend .fixed-wrapper;
+    top: 0;
+}
+.fixed-wrapper-bottom {
+    @extend .fixed-wrapper;
+    bottom: 0;
+    padding-bottom: $fixed-wrapper-padding;
+}
+@mixin crossBrowser($property, $val){
+    -webkit-#{$property}: $val;
+    -moz-#{$property}: $val;
+    -ms-#{$property}: $val;
+    #{$property}: $val;
+  }
