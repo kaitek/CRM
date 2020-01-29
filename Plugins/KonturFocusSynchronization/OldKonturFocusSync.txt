@@ -1,0 +1,179 @@
+﻿using System.Linq;
+using System.Collections.Generic;
+
+using Newtonsoft.Json;
+
+using Microsoft.Xrm.Sdk;
+using Microsoft.Xrm.Sdk.Query;
+
+using LM.Core.Entities;
+using LM.Core.Helpers;
+using LM.Core.Integration.KonturFocus;
+
+
+namespace LM.Core.Plugins
+{
+    [CrmPluginRegistration(MessageNameEnum.Create, Account.EntityLogicalName, StageEnum.PostOperation,
+        ExecutionModeEnum.Synchronous, "", "GetAccountFromKfOnCreate", 1, IsolationModeEnum.Sandbox,
+        Image1Type = ImageTypeEnum.PostImage, Image1Name = "PostImage")]
+    class GetAccountFromKfOnCreate
+    {
+        protected override void Execute(PluginContext executionContext)
+        {
+            var account = executionContext.Target.ToEntity<Account>();
+
+            //для дочерней организации запуск получения 
+            //данных из KF необходимо останавливать
+            if (account.ParentAccount != null)
+            {
+                return;
+            }
+
+            var inn = account.Inn;
+            if (string.IsNullOrEmpty(inn) || inn.Length < 10)
+            {
+                throw new InvalidPluginExecutionException("Невозможно создать организацию с пустым ИНН или ИНН с длинной меньше 10");
+            }
+
+            IOrganizationService organizationService = executionContext.OrganizationService;
+            Dictionary<string, string> configDictionary = ConfigParameterHelper.GetValues(organizationService,
+                ConfigParameterKeys.KonturFocusApiKey,
+                ConfigParameterKeys.KonturFocusApiBaseUrl,
+                ConfigParameterKeys.KonturFocusApigeeKey);
+
+            if (!configDictionary.ContainsKey(ConfigParameterKeys.KonturFocusApiKey))
+            {
+                throw new InvalidPluginExecutionException($"Не найден параметр конфигурации {ConfigParameterKeys.KonturFocusApiKey}");
+            }
+            if (!configDictionary.ContainsKey(ConfigParameterKeys.KonturFocusApiBaseUrl))
+            {
+                throw new InvalidPluginExecutionException($"Не найден параметр конфигурации {ConfigParameterKeys.KonturFocusApiBaseUrl}");
+            }
+            if (!configDictionary.ContainsKey(ConfigParameterKeys.KonturFocusApigeeKey))
+            {
+                throw new InvalidPluginExecutionException($"Не найден параметр конфигурации {ConfigParameterKeys.KonturFocusApigeeKey}");
+            }
+
+            string resultString = string.Empty;
+            try
+            {
+                var konturFocusApi = new KonturFocusApi(configDictionary[ConfigParameterKeys.KonturFocusApiBaseUrl],
+                    configDictionary[ConfigParameterKeys.KonturFocusApiKey],
+                    configDictionary[ConfigParameterKeys.KonturFocusApigeeKey]);
+                resultString = konturFocusApi.GetAccount(inn).Result;
+            }
+            catch
+            {
+                throw new InvalidPluginExecutionException("Произошла ошибка при запросе в Контур фокус. Обратитесь к администратору");
+            }
+
+            List<AccountKonturFocusModel> accountsFromKonturFocus =
+                JsonConvert.DeserializeObject<List<AccountKonturFocusModel>>(resultString);
+
+            if (accountsFromKonturFocus.Count > 0)
+            {
+                if (accountsFromKonturFocus[0].UL != null)
+                {
+                    //account = CreateUL(account, accountsFromKonturFocus[0]);
+                }
+                else if (accountsFromKonturFocus[0].IP != null)
+                {
+                    //account = CreateIP(account, accountsFromKonturFocus[0]);
+                }
+            }
+            else
+            {
+                throw new InvalidPluginExecutionException("Организация с данным ИНН не найдена в Контур-фокус");
+            }
+
+            organizationService.Update(account);
+            //теперь ищем адрес и заполняем у него поля
+            UpdateAccountAddress(account, accountsFromKonturFocus[0], organizationService);
+        }
+
+        public static void UpdateAccountAddress(Account tempAccount, AccountKonturFocusModel accountFromKonturFocus,
+            IOrganizationService organizationService)
+        {
+            var query = new QueryExpression(CustomerAddress.EntityLogicalName)
+            {
+                ColumnSet = new ColumnSet(true)
+            };
+            query.Criteria.AddCondition(CustomerAddress.FieldNames.ParentId, ConditionOperator.Equal, tempAccount.Id);
+            //при создании адреса создается 2 адреса, поэтому фильтруем его
+            query.Criteria.AddCondition(CustomerAddress.FieldNames.AddressNumber, ConditionOperator.Equal, 1);
+
+            var addressEntity = organizationService.RetrieveMultiple(query).Entities.Select(e => e.ToEntity<CustomerAddress>())
+                        .FirstOrDefault();
+            if (addressEntity != null)
+            {
+                //чтобы обновить ТОЛЬКО нужные поля
+                CustomerAddress addressForUpdate = new CustomerAddress() { Id = addressEntity.Id };
+                ParsedAddressRF addressObj = accountFromKonturFocus.UL?.legalAddress?.parsedAddressRF;
+
+                addressForUpdate.KladrCode = addressObj?.kladrCode;
+                addressForUpdate.StateOrProvinceTopo = addressObj?.regionName?.topoFullName;
+                addressForUpdate.District = addressObj?.district?.topoValue;
+                addressForUpdate.DistrictTopo = addressObj?.district?.topoFullName;
+                addressForUpdate.Settlement = addressObj?.settlement?.topoValue;
+                addressForUpdate.SettlementTopo = addressObj?.settlement?.topoFullName;
+                addressForUpdate.CityTopo = addressObj?.city?.topoFullName;
+                addressForUpdate.Street = addressObj?.street?.topoValue;
+                addressForUpdate.StreetTopo = addressObj?.street?.topoFullName;
+                addressForUpdate.House = addressObj?.house?.topoValue;
+                addressForUpdate.HouseTopo = addressObj?.house?.topoFullName;
+                addressForUpdate.Bulk = addressObj?.bulk?.topoValue;
+                addressForUpdate.BulkTopo = addressObj?.bulk?.topoFullName;
+                addressForUpdate.Flat = addressObj?.flat?.topoValue;
+                addressForUpdate.FlatTopo = addressObj?.flat?.topoFullName;
+                organizationService.Update(addressForUpdate);
+            }
+        }
+
+        public static Account CreateUL(Account tempAccount, AccountKonturFocusModel accountFromKonturFocus)
+        {
+            LegalName legalName = accountFromKonturFocus.UL?.legalName;
+
+            tempAccount.Name = legalName?.@short ?? legalName?.full;
+            tempAccount.AccountType = Account.AccountTypeEnum.UL;
+            tempAccount.RegisteredOn = accountFromKonturFocus.UL?.registrationDate;
+            tempAccount.Inn = accountFromKonturFocus.inn;
+            tempAccount.Ogrn = accountFromKonturFocus.ogrn;
+            tempAccount.Kpp = accountFromKonturFocus.UL.kpp;
+            tempAccount.OKPO = accountFromKonturFocus.UL.okpo;
+
+            ParsedAddressRF addressObj = accountFromKonturFocus.UL?.legalAddress?.parsedAddressRF;
+
+            string regionValue = addressObj?.regionName?.topoValue;
+            string regionTopo = addressObj?.regionName?.topoFullName;
+            string cityValue = addressObj?.city?.topoValue;
+            string cityTopo = addressObj?.city?.topoFullName;
+            string streetValue = addressObj?.street?.topoValue;
+            string streetTopo = addressObj?.street?.topoFullName;
+            string houseValue = addressObj?.house?.topoValue;
+            string houseTopo = addressObj?.house?.topoFullName;
+            string bulkValue = addressObj?.bulk?.topoValue;
+            string bulkTopo = addressObj.bulk != null ? $", {addressObj?.bulk?.topoFullName} " : string.Empty;
+            string flatValue = addressObj?.flat?.topoValue;
+            string flatTopo = addressObj.flat != null ? $", {addressObj?.flat?.topoFullName} " : string.Empty;
+
+            tempAccount.Address1_AddressTypeCode = Account.AddressTypeEnum.Invoicing;
+            tempAccount.Address1_StateOrProvince = $"{regionValue} {regionTopo}";
+            tempAccount.Address1_PostalCode = addressObj.zipCode;
+            tempAccount.Address1_City = $"{cityTopo} {cityValue}";
+            tempAccount.Address1_Line1 =
+                $"{streetTopo} {streetValue}, {houseTopo} {houseValue}{bulkTopo}{bulkValue}{flatTopo}{flatValue}";
+
+            return tempAccount;
+        }
+        private static Account CreateIP(Account tempAccount, AccountKonturFocusModel accountFromKonturFocus)
+        {
+            tempAccount.Name = accountFromKonturFocus.IP?.fio;
+            tempAccount.AccountType = Account.AccountTypeEnum.IP;
+            tempAccount.RegisteredOn = accountFromKonturFocus.IP?.registrationDate;
+            tempAccount.Inn = accountFromKonturFocus.inn;
+            tempAccount.Ogrn = accountFromKonturFocus.ogrn;
+            tempAccount.OKPO = accountFromKonturFocus.IP.okpo;
+            return tempAccount;
+        }
+    }
+}
